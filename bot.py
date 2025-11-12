@@ -3,52 +3,39 @@ import asyncio
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from keep_alive import keep_alive
 
-# Cargar variables de entorno
+# Carga del archivo de configuración
 load_dotenv("config.env")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
-# ✅ Comando /start
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN no encontrado. Verifica tu archivo config.env o variables de entorno en Render.")
+
+# === COMANDOS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 ¡Hola! Soy tu bot de Google Drive, listo para ayudarte.")
+    await update.message.reply_text("👋 ¡Hola! Soy tu bot de Google Drive conectado y activo 🚀")
 
-# ✅ Comando /ping (prueba de conexión)
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Bot activo y funcionando correctamente.")
+    await update.message.reply_text("✅ Estoy vivo y funcionando correctamente en Render.")
 
-# ✅ Comando /info (solo para ti)
-async def info(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id == OWNER_ID:
-        await update.message.reply_text("📊 Estado: Online\nVersión: v1.0\nServidor: Render")
-    else:
-        await update.message.reply_text("🚫 No tienes permiso para usar este comando.")
-
-# ✅ Mantener el bot activo (útil para Render)
-async def keep_alive():
-    from flask import Flask
-    app = Flask(__name__)
-
-    @app.route('/')
-    def home():
-        return "Bot activo 🟢"
-
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
-# ✅ Iniciar aplicación
+# === FUNCIÓN PRINCIPAL ===
 async def main():
-    print("Iniciando bot...")
+    print("🚀 Iniciando bot...")
+
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
+    # Handlers de comandos
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ping", ping))
-    app.add_handler(CommandHandler("info", info))
 
-    await app.run_polling()
+    # Mantener el bot activo
+    keep_alive()
+
+    # Polling asincrónico
+    await app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
-    # Ejecutar Flask en paralelo al bot (Render necesita un puerto HTTP activo)
-    import threading
-    threading.Thread(target=keep_alive).start()
     asyncio.run(main())
