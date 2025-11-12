@@ -2,7 +2,7 @@ import os
 import random
 import asyncio
 from io import BytesIO
-from datetime import datetime, timedelta
+from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -26,7 +26,18 @@ GOOGLE_REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN")
 if not all([BOT_TOKEN, OWNER_ID, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN]):
     raise ValueError("❌ Faltan variables de entorno necesarias para el bot o Google Drive")
 
-# === Conexión con Google Drive ===
+# === Frases inspiradoras ===
+PHRASES = [
+    "🌟 Cada día es una nueva oportunidad para brillar.",
+    "💪 Cree en ti, incluso cuando nadie más lo haga.",
+    "🌱 Las pequeñas acciones diarias crean grandes resultados.",
+    "🔥 Tu esfuerzo de hoy será tu orgullo de mañana.",
+    "🚀 No busques el momento perfecto, haz que el momento sea perfecto.",
+    "🌈 La vida es como una cámara: enfócate en lo positivo.",
+    "💫 A veces perderse es la mejor forma de encontrarse."
+]
+
+# === Configuración Google Drive ===
 creds = Credentials(
     None,
     refresh_token=GOOGLE_REFRESH_TOKEN,
@@ -36,75 +47,49 @@ creds = Credentials(
 )
 drive_service = build("drive", "v3", credentials=creds)
 
-# === Frases inspiradoras ===
-PHRASES = [
-    "🌅 Cada día es una nueva oportunidad.",
-    "💪 No te rindas, lo mejor está por venir.",
-    "🚀 Cree en ti mismo y da el siguiente paso.",
-    "🌻 Sonríe, hoy puede ser un gran día.",
-    "🔥 El éxito empieza cuando decides intentarlo.",
-    "🌙 Incluso las noches más oscuras terminan con el amanecer.",
-    "💫 No hay límites para quien sueña en grande."
-]
+# === Cache de archivos (para evitar pedir Drive cada vez) ===
+IMAGE_CACHE = []
+CACHE_TTL_MINUTES = 10
 
-# === Scheduler y estado global ===
-scheduler = AsyncIOScheduler(timezone="UTC")
-job = None  # referencia al job automático
-file_cache = []           # lista de dicts {id, name}
-cache_last_refreshed = None
-CACHE_TTL_MINUTES = 10    # cada cuánto refrescar la lista de archivos
-
-# === UTIL: refrescar cache de archivos (solo metadata, no descarga) ===
 def refresh_file_cache():
-    global file_cache, cache_last_refreshed
+    """Actualiza la lista de imágenes disponibles en Drive."""
+    global IMAGE_CACHE
     try:
-        print("🔄 Refrescando cache de archivos de Drive...")
         results = drive_service.files().list(
             q="mimeType contains 'image/' and trashed = false",
-            pageSize=1000,  # obtener hasta 1000 ids (ajusta si nece.)
+            pageSize=200,
             fields="files(id, name)"
         ).execute()
-        files = results.get("files", [])
-        file_cache = [{"id": f["id"], "name": f["name"]} for f in files]
-        cache_last_refreshed = datetime.utcnow()
-        print(f"✅ Cache actualizada: {len(file_cache)} imágenes encontradas.")
+        IMAGE_CACHE = results.get("files", [])
+        print(f"🗂️ Caché actualizada con {len(IMAGE_CACHE)} imágenes.")
     except Exception as e:
-        print(f"⚠️ Error al refrescar cache de Drive: {e}")
+        print(f"⚠️ Error al actualizar caché: {e}")
 
-# === Obtener archivo aleatorio usando cache (descarga el binario) ===
 def get_random_image_file_from_cache():
-    # si cache vacía o vieja, refrescar
-    global cache_last_refreshed
-    if not file_cache or (cache_last_refreshed and datetime.utcnow() - cache_last_refreshed > timedelta(minutes=CACHE_TTL_MINUTES)):
+    """Obtiene una imagen aleatoria de la caché o de Drive si está vacía."""
+    global IMAGE_CACHE
+    if not IMAGE_CACHE:
         refresh_file_cache()
-
-    if not file_cache:
-        print("⚠️ Cache vacía: no hay imágenes para elegir.")
+    if not IMAGE_CACHE:
         return None, None
 
-    file_meta = random.choice(file_cache)
+    file = random.choice(IMAGE_CACHE)
     try:
-        request = drive_service.files().get_media(fileId=file_meta["id"])
-        data = BytesIO(request.execute())
-        data.name = file_meta["name"]
-        return data, file_meta["name"]
+        request = drive_service.files().get_media(fileId=file["id"])
+        file_data = BytesIO(request.execute())
+        file_data.name = file["name"]
+        return file_data, file["name"]
     except Exception as e:
-        print(f"⚠️ Error descargando archivo {file_meta['id']}: {e}")
-        # si falla, eliminamos esa entrada de cache para evitar repetir errores
-        try:
-            file_cache.remove(file_meta)
-        except Exception:
-            pass
+        print(f"⚠️ Error al descargar imagen: {e}")
         return None, None
 
-# === Lógica de envío ===
-async def send_random_image(context_or_app, manual=False, chat_id=None):
-    # context_or_app: si es Context (jobs de APScheduler pasan Context), si es app (cuando se lanza manual con app arg)
-    # manejamos ambos casos comprobando atributos
-    if hasattr(context_or_app, "bot"):
-        bot = context_or_app.bot
+# === Función general de envío de imagen ===
+async def send_random_image(bot_or_context, manual=False, chat_id=None):
+    """Envía una imagen aleatoria desde Drive, con frase inspiradora."""
+    if hasattr(bot_or_context, "bot"):
+        bot = bot_or_context.bot
     else:
-        bot = context_or_app.bot  # si le pasamos la app, también tiene .bot
+        bot = bot_or_context
 
     file, name = get_random_image_file_from_cache()
     if not file:
@@ -116,20 +101,30 @@ async def send_random_image(context_or_app, manual=False, chat_id=None):
         caption = f"{phrase}\n\n🖼️ *{name}*\n🕐 {datetime.utcnow().strftime('%H:%M:%S')} UTC"
         target = chat_id if chat_id else OWNER_ID
         await bot.send_photo(chat_id=target, photo=file, caption=caption, parse_mode="Markdown")
+
         modo = "manual" if manual else "automático"
         print(f"📤 Imagen enviada ({modo}): {name}")
     except Exception as e:
         print(f"❌ Error al enviar imagen: {e}")
 
-# === Comandos ===
+# === Inicializar scheduler global ===
+scheduler = AsyncIOScheduler(timezone="UTC")
+job = None
+
+# === Comandos del bot ===
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global job
     if job:
         await update.message.reply_text("✅ El envío automático ya está activo.")
         return
 
-    # Añadimos job que ejecuta send_random_image, pasándole 'context' cada vez
-    job = scheduler.add_job(lambda: asyncio.create_task(send_random_image(context)), "interval", minutes=1)
+    bot = context.bot
+    job = scheduler.add_job(
+        lambda: asyncio.create_task(send_random_image(bot)),
+        "interval",
+        minutes=1
+    )
+
     await update.message.reply_text("🚀 Envío automático ACTIVADO (cada 1 minuto).")
     print("🟢 Envío automático iniciado.")
 
@@ -141,50 +136,39 @@ async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🛑 Envío automático DETENIDO.")
         print("🔴 Envío automático detenido.")
     else:
-        await update.message.reply_text("⚠️ No había envío automático activo.")
-
-async def foto_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📸 Buscando una imagen inspiradora...")
-    # pasar el context para que send_random_image use context.bot
-    await send_random_image(context, manual=True, chat_id=update.effective_chat.id)
+        await update.message.reply_text("⚠️ No hay tareas automáticas en ejecución.")
 
 async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Pong! Todo funciona correctamente 😎")
+    await update.message.reply_text("✅ Pong! El bot está funcionando correctamente 😎")
+
+async def foto_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📸 Buscando una imagen aleatoria...")
+    await send_random_image(context, manual=True, chat_id=update.effective_chat.id)
 
 # === Función principal ===
 async def start_bot():
     print("🚀 Iniciando bot...")
 
-    # refrescar cache al arrancar
-    refresh_file_cache()
-
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # registrar comandos
     app.add_handler(CommandHandler("start", start_cmd))
     app.add_handler(CommandHandler("stop", stop_cmd))
-    app.add_handler(CommandHandler("foto", foto_cmd))
     app.add_handler(CommandHandler("ping", ping_cmd))
+    app.add_handler(CommandHandler("foto", foto_cmd))
 
-    # iniciar scheduler (usa mismo loop asyncio)
     scheduler.start()
-
-    # también activar job de refresco de cache cada X minutos
     scheduler.add_job(refresh_file_cache, "interval", minutes=CACHE_TTL_MINUTES)
+    refresh_file_cache()  # precarga inicial
 
-    # iniciar bot (initialize + start)
     await app.initialize()
     await app.start()
     print("🤖 Bot iniciado correctamente y escuchando comandos...")
 
-    # iniciar polling (no cerrar loop al terminar)
-    await app.updater.start_polling()
-    await asyncio.Event().wait()  # bloqueo infinito para mantener el servicio
+    await asyncio.Event().wait()  # Mantiene el bot activo
 
-# === ENTRYPOINT ===
+# === Ejecución principal ===
 if __name__ == "__main__":
-    keep_alive()  # levantar servidor flask en hilo daemon
-
+    keep_alive()
     try:
         asyncio.run(start_bot())
     except KeyboardInterrupt:
