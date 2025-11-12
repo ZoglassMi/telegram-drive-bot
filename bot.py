@@ -5,7 +5,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from keep_alive import keep_alive
 
 # === CARGA DE VARIABLES ===
-# Solo usa load_dotenv si estás en local
 if os.path.exists("config.env"):
     from dotenv import load_dotenv
     load_dotenv("config.env")
@@ -13,8 +12,16 @@ if os.path.exists("config.env"):
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
+# Variables de Google
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN")
+
+# Validaciones
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN no encontrado. Verifica tus variables de entorno.")
+if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET or not GOOGLE_REFRESH_TOKEN:
+    raise ValueError("❌ Variables de Google no configuradas correctamente.")
 
 # === COMANDOS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -27,16 +34,17 @@ async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def main():
     print("🚀 Iniciando bot...")
 
+    # Crear la aplicación
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Handlers de comandos
+    # Agregar handlers de comandos
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ping", ping))
 
     # Mantener el bot activo
     keep_alive()
 
-    # Polling asincrónico
+    # Ejecutar el bot en polling asincrónico
     await app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
