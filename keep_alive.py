@@ -10,10 +10,9 @@ def home():
 
 def run():
     port = int(os.environ.get("PORT", 8080))
-    # use_reloader=False evita que Flask cree procesos/hilos adicionales
     app.run(host="0.0.0.0", port=port, use_reloader=False)
 
 def keep_alive():
     thread = Thread(target=run)
-    thread.daemon = True   # thread daemon: no bloquea el cierre del intérprete
+    thread.daemon = True
     thread.start()
