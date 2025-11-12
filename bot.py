@@ -74,7 +74,7 @@ def get_random_image_file():
         print(f"⚠️ Error al obtener imagen: {e}")
         return None, None
 
-# === Sistema de tareas automáticas ===
+# === Scheduler ===
 scheduler = AsyncIOScheduler(timezone="UTC")
 job = None  # Referencia al envío automático
 
@@ -96,15 +96,15 @@ async def send_random_image(context: ContextTypes.DEFAULT_TYPE, manual=False, ch
         except Exception as e:
             print(f"❌ Error al enviar imagen: {e}")
 
-# === Comandos del bot ===
+# === Comandos ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global job
     chat_id = update.effective_chat.id
     if job and job.next_run_time:
-        await update.message.reply_text("✅ El bot ya está activo y enviando imágenes automáticamente.")
+        await update.message.reply_text("✅ El bot ya está enviando imágenes automáticamente.")
     else:
         job = scheduler.add_job(send_random_image, "interval", minutes=1, args=[context])
-        await update.message.reply_text("🚀 Envío automático de imágenes *activado* cada minuto.")
+        await update.message.reply_text("🚀 Envío automático activado cada minuto.")
         print("🟢 Envío automático iniciado.")
 
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -112,10 +112,10 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if job:
         job.remove()
         job = None
-        await update.message.reply_text("🛑 Envío automático de imágenes *detenido*.")
+        await update.message.reply_text("🛑 Envío automático detenido.")
         print("🔴 Envío automático detenido.")
     else:
-        await update.message.reply_text("⚠️ No hay ningún envío automático activo.")
+        await update.message.reply_text("⚠️ No hay envío automático activo.")
 
 async def foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
@@ -125,7 +125,7 @@ async def foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Pong! Todo funciona correctamente 😎")
 
-# === Función principal ===
+# === Inicializar bot ===
 async def start_bot():
     print("🚀 Iniciando bot...")
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -137,15 +137,13 @@ async def start_bot():
     app.add_handler(CommandHandler("ping", ping))
 
     scheduler.start()
-    await app.initialize()
-    await app.start()
+
+    await app.run_polling(close_loop=False)
     print("🤖 Bot iniciado correctamente y escuchando comandos...")
 
-    await asyncio.Event().wait()
-
-# === Ejecución principal ===
+# === Punto de entrada ===
 if __name__ == "__main__":
-    keep_alive()
+    keep_alive()  # Flask arriba primero (no bloqueante)
     try:
         asyncio.run(start_bot())
     except KeyboardInterrupt:
