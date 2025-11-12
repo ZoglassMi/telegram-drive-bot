@@ -10,6 +10,3 @@ credentials.json
 # Archivos del sistema
 .DS_Store
 Thumbs.db
-
-# Configuración Render
-.env

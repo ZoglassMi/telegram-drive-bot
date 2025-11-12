@@ -1,25 +1,27 @@
 import os
 import asyncio
-from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from keep_alive import keep_alive
 
-# Carga del archivo de configuración
-load_dotenv("config.env")
+# === CARGA DE VARIABLES ===
+# Solo usa load_dotenv si estás en local
+if os.path.exists("config.env"):
+    from dotenv import load_dotenv
+    load_dotenv("config.env")
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
 if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN no encontrado. Verifica tu archivo config.env o variables de entorno en Render.")
+    raise ValueError("❌ BOT_TOKEN no encontrado. Verifica tus variables de entorno.")
 
 # === COMANDOS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("👋 ¡Hola! Soy tu bot de Google Drive conectado y activo 🚀")
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Estoy vivo y funcionando correctamente en Render.")
+    await update.message.reply_text("✅ Estoy vivo y funcionando correctamente en Railway.")
 
 # === FUNCIÓN PRINCIPAL ===
 async def main():
