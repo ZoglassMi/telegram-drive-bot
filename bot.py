@@ -26,18 +26,7 @@ GOOGLE_REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN")
 if not all([BOT_TOKEN, OWNER_ID, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN]):
     raise ValueError("❌ Faltan variables de entorno necesarias para el bot o Google Drive")
 
-# === Frases inspiradoras ===
-PHRASES = [
-    "🌟 Cada día es una nueva oportunidad para brillar.",
-    "💪 Cree en ti, incluso cuando nadie más lo haga.",
-    "🌱 Las pequeñas acciones diarias crean grandes resultados.",
-    "🔥 Tu esfuerzo de hoy será tu orgullo de mañana.",
-    "🚀 No busques el momento perfecto, haz que el momento sea perfecto.",
-    "🌈 La vida es como una cámara: enfócate en lo positivo.",
-    "💫 A veces perderse es la mejor forma de encontrarse."
-]
-
-# === Configuración Google Drive ===
+# === Conexión con Google Drive ===
 creds = Credentials(
     None,
     refresh_token=GOOGLE_REFRESH_TOKEN,
@@ -47,128 +36,128 @@ creds = Credentials(
 )
 drive_service = build("drive", "v3", credentials=creds)
 
-# === Cache de archivos (para evitar pedir Drive cada vez) ===
-IMAGE_CACHE = []
-CACHE_TTL_MINUTES = 10
+# === Frases inspiradoras ===
+PHRASES = [
+    "🌅 Cada día es una nueva oportunidad.",
+    "💪 No te rindas, lo mejor está por venir.",
+    "🚀 Cree en ti mismo y da el siguiente paso.",
+    "🌻 Sonríe, hoy puede ser un gran día.",
+    "🔥 El éxito empieza cuando decides intentarlo.",
+    "🌙 Incluso las noches más oscuras terminan con el amanecer.",
+    "💫 No hay límites para quien sueña en grande."
+]
 
-def refresh_file_cache():
-    """Actualiza la lista de imágenes disponibles en Drive."""
-    global IMAGE_CACHE
+# === Estado global ===
+auto_send_enabled = False
+scheduler = None  # Para pausar o reanudar tareas
+
+# === Función para obtener imagen aleatoria ===
+def get_random_image_file():
     try:
         results = drive_service.files().list(
             q="mimeType contains 'image/' and trashed = false",
-            pageSize=200,
+            pageSize=100,
             fields="files(id, name)"
         ).execute()
-        IMAGE_CACHE = results.get("files", [])
-        print(f"🗂️ Caché actualizada con {len(IMAGE_CACHE)} imágenes.")
-    except Exception as e:
-        print(f"⚠️ Error al actualizar caché: {e}")
-
-def get_random_image_file_from_cache():
-    """Obtiene una imagen aleatoria de la caché o de Drive si está vacía."""
-    global IMAGE_CACHE
-    if not IMAGE_CACHE:
-        refresh_file_cache()
-    if not IMAGE_CACHE:
-        return None, None
-
-    file = random.choice(IMAGE_CACHE)
-    try:
+        files = results.get("files", [])
+        if not files:
+            print("⚠️ No se encontraron imágenes en Google Drive.")
+            return None, None
+        file = random.choice(files)
+        print(f"🖼️ Imagen seleccionada: {file['name']} ({file['id']})")
         request = drive_service.files().get_media(fileId=file["id"])
         file_data = BytesIO(request.execute())
         file_data.name = file["name"]
         return file_data, file["name"]
     except Exception as e:
-        print(f"⚠️ Error al descargar imagen: {e}")
+        print(f"⚠️ Error al obtener imagen: {e}")
         return None, None
 
-# === Función general de envío de imagen ===
-async def send_random_image(bot_or_context, manual=False, chat_id=None):
-    """Envía una imagen aleatoria desde Drive, con frase inspiradora."""
-    if hasattr(bot_or_context, "bot"):
-        bot = bot_or_context.bot
-    else:
-        bot = bot_or_context
-
-    file, name = get_random_image_file_from_cache()
-    if not file:
-        print("⚠️ No se encontró imagen para enviar.")
-        return
-
-    try:
-        phrase = random.choice(PHRASES)
-        caption = f"{phrase}\n\n🖼️ *{name}*\n🕐 {datetime.utcnow().strftime('%H:%M:%S')} UTC"
-        target = chat_id if chat_id else OWNER_ID
-        await bot.send_photo(chat_id=target, photo=file, caption=caption, parse_mode="Markdown")
-
-        modo = "manual" if manual else "automático"
-        print(f"📤 Imagen enviada ({modo}): {name}")
-    except Exception as e:
-        print(f"❌ Error al enviar imagen: {e}")
-
-# === Inicializar scheduler global ===
-scheduler = AsyncIOScheduler(timezone="UTC")
-job = None
-
 # === Comandos del bot ===
-async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global job
-    if job:
-        await update.message.reply_text("✅ El envío automático ya está activo.")
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global auto_send_enabled, scheduler
+    auto_send_enabled = True
+    await update.message.reply_text("✅ Autoenvío activado. Te enviaré fotos cada minuto 🌅")
+    print("▶️ Autoenvío activado por comando /start")
+
+    # Enviar una imagen inicial
+    file, name = get_random_image_file()
+    if file:
+        phrase = random.choice(PHRASES)
+        caption = f"{phrase}\n\n🖼️ **{name}**\n🕐 {datetime.now().strftime('%H:%M:%S')} UTC"
+        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=file, caption=caption, parse_mode="Markdown")
+        print(f"📸 Imagen inicial enviada: {name}")
+
+async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global auto_send_enabled
+    auto_send_enabled = False
+    await update.message.reply_text("🛑 Autoenvío detenido. Usa /start para reanudar.")
+    print("⏸️ Autoenvío detenido por comando /stop")
+
+async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("✅ Pong! Todo funciona correctamente 😎")
+
+async def foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📸 Buscando una imagen aleatoria en tu Google Drive...")
+    file, name = get_random_image_file()
+    if file:
+        phrase = random.choice(PHRASES)
+        caption = f"{phrase}\n\n🖼️ **{name}**\n🕐 {datetime.now().strftime('%H:%M:%S')} UTC"
+        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=file, caption=caption, parse_mode="Markdown")
+        print(f"📤 Imagen enviada manualmente: {name}")
+    else:
+        await update.message.reply_text("⚠️ No se pudo obtener una imagen en este momento.")
+
+# === Envío automático ===
+async def send_random_image(context: ContextTypes.DEFAULT_TYPE):
+    global auto_send_enabled
+    if not auto_send_enabled:
         return
 
-    bot = context.bot
-    job = scheduler.add_job(
-        lambda: asyncio.create_task(send_random_image(bot)),
-        "interval",
-        minutes=1
-    )
+    file, name = get_random_image_file()
+    if file:
+        try:
+            phrase = random.choice(PHRASES)
+            caption = f"{phrase}\n\n🌅 Imagen automática desde tu Google Drive\n🖼️ **{name}**\n🕐 {datetime.now().strftime('%H:%M:%S')} UTC"
+            await context.bot.send_photo(chat_id=OWNER_ID, photo=file, caption=caption, parse_mode="Markdown")
+            print(f"📤 Imagen automática enviada: {name}")
+        except Exception as e:
+            print(f"❌ Error al enviar imagen automática: {e}")
 
-    await update.message.reply_text("🚀 Envío automático ACTIVADO (cada 1 minuto).")
-    print("🟢 Envío automático iniciado.")
-
-async def stop_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global job
-    if job:
-        job.remove()
-        job = None
-        await update.message.reply_text("🛑 Envío automático DETENIDO.")
-        print("🔴 Envío automático detenido.")
-    else:
-        await update.message.reply_text("⚠️ No hay tareas automáticas en ejecución.")
-
-async def ping_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Pong! El bot está funcionando correctamente 😎")
-
-async def foto_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📸 Buscando una imagen aleatoria...")
-    await send_random_image(context, manual=True, chat_id=update.effective_chat.id)
-
-# === Función principal ===
+# === Bucle principal ===
 async def start_bot():
+    global scheduler
     print("🚀 Iniciando bot...")
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("stop", stop_cmd))
-    app.add_handler(CommandHandler("ping", ping_cmd))
-    app.add_handler(CommandHandler("foto", foto_cmd))
+    # Comandos
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stop", stop))
+    app.add_handler(CommandHandler("ping", ping))
+    app.add_handler(CommandHandler("foto", foto))
 
+    # Planificador de envío automático
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.add_job(send_random_image, "interval", minutes=1, args=[app])
     scheduler.start()
-    scheduler.add_job(refresh_file_cache, "interval", minutes=CACHE_TTL_MINUTES)
-    refresh_file_cache()  # precarga inicial
 
-    await app.initialize()
-    await app.start()
-    print("🤖 Bot iniciado correctamente y escuchando comandos...")
-
-    await asyncio.Event().wait()  # Mantiene el bot activo
+    # Mantener el bot vivo con reconexión
+    while True:
+        try:
+            print("🤖 Bot conectado y escuchando comandos...")
+            await app.initialize()
+            await app.start()
+            await app.updater.start_polling()
+            await asyncio.Event().wait()
+        except Exception as e:
+            print(f"⚠️ Error en ejecución principal: {e}")
+            print("🔁 Reintentando conexión en 10 segundos...")
+            await asyncio.sleep(10)
 
 # === Ejecución principal ===
 if __name__ == "__main__":
-    keep_alive()
+    keep_alive()  # mantiene activo Railway
     try:
         asyncio.run(start_bot())
     except KeyboardInterrupt:
