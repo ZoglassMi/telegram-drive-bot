@@ -1,13 +1,15 @@
 import os
-import threading
 import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from dotenv import load_dotenv
 from keep_alive import keep_alive
 
-# Cargar variables de entorno
-load_dotenv()
+# Cargar .env local si existe (solo para desarrollo)
+if os.path.exists("config.env"):
+    load_dotenv("config.env")
+else:
+    load_dotenv()  # intenta cargar variables del entorno en Railway
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
@@ -22,7 +24,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Pong! Todo funciona correctamente 😎")
 
-# === FUNCIÓN PRINCIPAL ===
+# === FUNCION PRINCIPAL ASINCRONA ===
 async def start_bot():
     print("🚀 Iniciando bot...")
 
@@ -30,22 +32,23 @@ async def start_bot():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ping", ping))
 
+    # Inicializar y arrancar sin usar run_polling (evita cerrar el loop)
     await app.initialize()
     await app.start()
     print("🤖 Bot iniciado correctamente y escuchando comandos...")
 
-    # Mantiene el bot corriendo
-    await app.updater.start_polling()
-    await asyncio.Event().wait()  # Espera infinita sin cerrar loop
+    # Si necesitas polling explícito (esto usa internamente a la app)
+    # en PTB 20 la forma correcta es usar start() y luego esperar indefinidamente.
+    # Mantener vivo:
+    await asyncio.Event().wait()
 
-# === ARRANQUE SEGURO PARA RAILWAY ===
-def run_bot():
-    asyncio.run(start_bot())
-
+# === ARRANQUE ===
 if __name__ == "__main__":
-    # Inicia el servidor Flask (para mantener el contenedor vivo)
+    # 1) Levanta el servidor Flask en hilo daemon (mantiene contenedor “vivo”)
     keep_alive()
 
-    # Inicia el bot en un hilo separado
-    bot_thread = threading.Thread(target=run_bot)
-    bot_thread.start()
+    # 2) Ejecuta el bot en el hilo principal con asyncio.run()
+    try:
+        asyncio.run(start_bot())
+    except KeyboardInterrupt:
+        print("🛑 Bot detenido manualmente.")
