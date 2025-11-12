@@ -1,42 +1,47 @@
 import os
+import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from keep_alive import keep_alive
-import asyncio
 
-# === CARGA DE VARIABLES ===
-if os.path.exists("config.env"):
-    from dotenv import load_dotenv
-    load_dotenv("config.env")
+# Cargar variables de entorno
+from dotenv import load_dotenv
+load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-GOOGLE_REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN")
-
-# === VALIDACIONES ===
+# --- Verificación básica ---
 if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN no encontrado.")
-if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET or not GOOGLE_REFRESH_TOKEN:
-    raise ValueError("❌ Variables de Google no configuradas correctamente.")
+    raise ValueError("❌ Falta la variable BOT_TOKEN en Railway")
 
-# === COMANDOS ===
+# --- Comandos del bot ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 ¡Hola! Soy tu bot de Google Drive conectado y activo 🚀")
+    await update.message.reply_text("👋 ¡Hola! Bot en Railway activo y funcionando 🚀")
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Estoy vivo y funcionando correctamente en Railway.")
+    await update.message.reply_text("✅ Pong! El bot está vivo 😎")
 
-# === CREAR APLICACIÓN ===
-app = ApplicationBuilder().token(BOT_TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("ping", ping))
+# --- Arranque principal ---
+async def main():
+    print("🚀 Iniciando bot...")
 
-# === MANTENER BOT ACTIVO ===
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("ping", ping))
+
+    # Ejecutar el bot (polling)
+    await app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+# --- Mantener vivo el contenedor ---
 keep_alive()
 
-# === EJECUTAR POLLING ===
+# --- Iniciar bot ---
 if __name__ == "__main__":
-    t
+    try:
+        # Crear una nueva tarea sin cerrar el event loop
+        loop = asyncio.get_event_loop()
+        loop.create_task(main())
+        loop.run_forever()
+    except KeyboardInterrupt:
+        print("🛑 Bot detenido manualmente.")
