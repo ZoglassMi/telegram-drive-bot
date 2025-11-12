@@ -36,7 +36,21 @@ creds = Credentials(
 )
 drive_service = build("drive", "v3", credentials=creds)
 
-# === Función para obtener imagen aleatoria ===
+# === Frases inspiradoras ===
+PHRASES = [
+    "🌅 Cada día es una nueva oportunidad.",
+    "💪 No te rindas, lo mejor está por venir.",
+    "🚀 Cree en ti mismo y da el siguiente paso.",
+    "🌻 Sonríe, hoy puede ser un gran día.",
+    "🔥 El éxito empieza cuando decides intentarlo.",
+    "🌙 Incluso las noches más oscuras terminan con el amanecer.",
+    "💫 No hay límites para quien sueña en grande."
+]
+
+# === Estado del autoenvío ===
+auto_send_enabled = True
+
+# === Función para obtener imagen aleatoria de Google Drive ===
 def get_random_image_file():
     try:
         results = drive_service.files().list(
@@ -51,7 +65,6 @@ def get_random_image_file():
         file = random.choice(files)
         print(f"🖼️ Imagen seleccionada: {file['name']} ({file['id']})")
 
-        # Descargar el archivo en memoria
         request = drive_service.files().get_media(fileId=file["id"])
         file_data = BytesIO(request.execute())
         file_data.name = file["name"]
@@ -62,7 +75,14 @@ def get_random_image_file():
 
 # === Comandos de Telegram ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 ¡Hola! El bot está activo en Railway 🚀")
+    global auto_send_enabled
+    auto_send_enabled = True
+    await update.message.reply_text("✅ Autoenvío de imágenes activado. Te enviaré fotos automáticamente cada minuto.")
+
+async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global auto_send_enabled
+    auto_send_enabled = False
+    await update.message.reply_text("🛑 Autoenvío de imágenes detenido. Usa /start para reanudar.")
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Pong! Todo funciona correctamente 😎")
@@ -71,30 +91,36 @@ async def foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📸 Buscando una imagen aleatoria en tu Google Drive...")
     file, name = get_random_image_file()
     if file:
-        caption = f"🖼️ Imagen enviada manualmente:\n**{name}**\n⏰ {datetime.now().strftime('%H:%M:%S')} UTC"
+        phrase = random.choice(PHRASES)
+        caption = f"{phrase}\n\n🖼️ **{name}**\n🕐 {datetime.now().strftime('%H:%M:%S')} UTC"
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=file,
             caption=caption,
             parse_mode="Markdown"
         )
-        print("📤 Imagen enviada manualmente con /foto.")
+        print(f"📤 Imagen enviada manualmente: {name}")
     else:
         await update.message.reply_text("⚠️ No se pudo obtener una imagen en este momento.")
 
 # === Envío automático cada minuto ===
-async def send_random_image(context: ContextTypes.DEFAULT_TYPE):
+async def send_random_image(app):
+    global auto_send_enabled
+    if not auto_send_enabled:
+        return
+
     file, name = get_random_image_file()
     if file:
         try:
-            caption = f"🌅 Imagen automática desde tu Google Drive\n**{name}**\n🕐 {datetime.now().strftime('%H:%M:%S')} UTC"
-            await context.bot.send_photo(
+            phrase = random.choice(PHRASES)
+            caption = f"{phrase}\n\n🌅 Imagen automática desde tu Google Drive\n🖼️ **{name}**\n🕐 {datetime.now().strftime('%H:%M:%S')} UTC"
+            await app.bot.send_photo(
                 chat_id=OWNER_ID,
                 photo=file,
                 caption=caption,
                 parse_mode="Markdown"
             )
-            print(f"📤 Imagen enviada automáticamente ({name}) a las {datetime.now()}")
+            print(f"📤 Imagen enviada automáticamente: {name} ({datetime.now()})")
         except Exception as e:
             print(f"❌ Error al enviar imagen automática: {e}")
 
@@ -106,6 +132,7 @@ async def start_bot():
 
     # Comandos
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("stop", stop))
     app.add_handler(CommandHandler("ping", ping))
     app.add_handler(CommandHandler("foto", foto))
 
@@ -119,11 +146,11 @@ async def start_bot():
     await app.start()
     print("🤖 Bot iniciado correctamente y escuchando comandos...")
 
-    await asyncio.Event().wait()  # Mantiene el bot corriendo
+    await asyncio.Event().wait()  # Mantiene el bot activo
 
 # === Ejecución principal ===
 if __name__ == "__main__":
-    keep_alive()  # mantiene el contenedor Railway activo
+    keep_alive()  # Mantiene activo Railway
 
     try:
         asyncio.run(start_bot())
