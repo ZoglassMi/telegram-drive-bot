@@ -65,7 +65,6 @@ def get_random_image_file():
         file = random.choice(files)
         print(f"🖼️ Imagen seleccionada: {file['name']} ({file['id']})")
 
-        # Descargar el archivo en memoria
         request = drive_service.files().get_media(fileId=file["id"])
         file_data = BytesIO(request.execute())
         file_data.name = file["name"]
@@ -76,7 +75,7 @@ def get_random_image_file():
 
 # === Scheduler ===
 scheduler = AsyncIOScheduler(timezone="UTC")
-job = None  # Referencia al envío automático
+job = None
 
 async def send_random_image(context: ContextTypes.DEFAULT_TYPE, manual=False, chat_id=None):
     file, name = get_random_image_file()
@@ -130,21 +129,28 @@ async def start_bot():
     print("🚀 Iniciando bot...")
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Registrar comandos
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stop", stop))
     app.add_handler(CommandHandler("foto", foto))
     app.add_handler(CommandHandler("ping", ping))
 
     scheduler.start()
-
-    await app.run_polling(close_loop=False)
     print("🤖 Bot iniciado correctamente y escuchando comandos...")
 
-# === Punto de entrada ===
+    await app.start()
+    await app.updater.start_polling()
+    await asyncio.Event().wait()  # Mantiene el bot vivo
+
+# === MAIN seguro para Railway ===
 if __name__ == "__main__":
-    keep_alive()  # Flask arriba primero (no bloqueante)
+    keep_alive()
+
     try:
-        asyncio.run(start_bot())
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            print("⚠️ Loop ya en ejecución, creando nueva tarea asincrónica...")
+            loop.create_task(start_bot())
+        else:
+            loop.run_until_complete(start_bot())
     except KeyboardInterrupt:
         print("🛑 Bot detenido manualmente.")
