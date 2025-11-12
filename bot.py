@@ -12,8 +12,8 @@ from dotenv import load_dotenv
 # CONFIGURACIÓN INICIAL
 # =========================
 load_dotenv()
-BOT_TOKEN = os.getenv("8541894748:AAEcqOFbkqP_bFEkMpJYmagXG42Tvfo6iZs")
-OWNER_ID = int(os.getenv("5722722923", "0"))
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
