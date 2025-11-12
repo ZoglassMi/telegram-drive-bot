@@ -1,88 +1,131 @@
 import os
 import random
-import logging
 import asyncio
+from io import BytesIO
+from datetime import datetime
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from apscheduler.schedulers.background import BackgroundScheduler
+from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials
+from dotenv import load_dotenv
 from keep_alive import keep_alive
 
-# --- CONFIGURACIÓN ---
-TOKEN = os.getenv("BOT_TOKEN")  # tu token del bot
-OWNER_ID = int(os.getenv("OWNER_ID", "123456789"))  # tu ID de Telegram
+# === Cargar variables de entorno ===
+if os.path.exists("config.env"):
+    load_dotenv("config.env")
+else:
+    load_dotenv()
 
-# Lista de imágenes (pueden ser URLs públicas de Drive o Imgur)
-IMAGE_URLS = [
-    "https://picsum.photos/600/400?random=1",
-    "https://picsum.photos/600/400?random=2",
-    "https://picsum.photos/600/400?random=3"
-]
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+OWNER_ID = int(os.getenv("OWNER_ID", "0"))
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN")
 
-# Frases inspiradoras
-PHRASES = [
-    "🌅 Cada día es una nueva oportunidad.",
-    "💪 No te rindas, lo mejor está por venir.",
-    "🚀 Cree en ti mismo y da el siguiente paso.",
-    "🌻 Sonríe, hoy puede ser un gran día.",
-    "🔥 El éxito empieza cuando decides intentarlo."
-]
+if not all([BOT_TOKEN, OWNER_ID, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN]):
+    raise ValueError("❌ Faltan variables de entorno necesarias para el bot o Google Drive")
 
-# Estado del bot (para pausar o reanudar)
-auto_send_enabled = True
-
-# --- LOGGING ---
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
+# === Conexión con Google Drive ===
+creds = Credentials(
+    None,
+    refresh_token=GOOGLE_REFRESH_TOKEN,
+    token_uri="https://oauth2.googleapis.com/token",
+    client_id=GOOGLE_CLIENT_ID,
+    client_secret=GOOGLE_CLIENT_SECRET,
 )
+drive_service = build("drive", "v3", credentials=creds)
 
-# --- FUNCIONES DE BOT ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global auto_send_enabled
-    auto_send_enabled = True
-    await update.message.reply_text("✅ Bot iniciado. Te enviaré fotos automáticamente cada minuto.")
-
-async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global auto_send_enabled
-    auto_send_enabled = False
-    await update.message.reply_text("🛑 Autoenvío de fotos detenido. Usa /start para reanudar.")
-
-async def send_random_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Comando manual para enviar una foto"""
-    url = random.choice(IMAGE_URLS)
-    phrase = random.choice(PHRASES)
-    await context.bot.send_photo(chat_id=update.effective_chat.id, photo=url, caption=phrase)
-
-async def send_random_image(app):
-    """Tarea automática que se ejecuta cada cierto tiempo"""
-    global auto_send_enabled
-    if not auto_send_enabled:
-        return
-
+# === Función para obtener imagen aleatoria ===
+def get_random_image_file():
     try:
-        url = random.choice(IMAGE_URLS)
-        phrase = random.choice(PHRASES)
-        await app.bot.send_photo(chat_id=OWNER_ID, photo=url, caption=phrase)
+        results = drive_service.files().list(
+            q="mimeType contains 'image/' and trashed = false",
+            pageSize=100,
+            fields="files(id, name)"
+        ).execute()
+        files = results.get("files", [])
+        if not files:
+            print("⚠️ No se encontraron imágenes en Google Drive.")
+            return None, None
+        file = random.choice(files)
+        print(f"🖼️ Imagen seleccionada: {file['name']} ({file['id']})")
+
+        # Descargar el archivo en memoria
+        request = drive_service.files().get_media(fileId=file["id"])
+        file_data = BytesIO(request.execute())
+        file_data.name = file["name"]
+        return file_data, file["name"]
     except Exception as e:
-        logging.error(f"Error enviando imagen automática: {e}")
+        print(f"⚠️ Error al obtener imagen: {e}")
+        return None, None
 
-# --- CONFIGURAR BOT ---
-async def run_bot():
-    app = ApplicationBuilder().token(TOKEN).build()
+# === Comandos de Telegram ===
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("👋 ¡Hola! El bot está activo en Railway 🚀")
 
+async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("✅ Pong! Todo funciona correctamente 😎")
+
+async def foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📸 Buscando una imagen aleatoria en tu Google Drive...")
+    file, name = get_random_image_file()
+    if file:
+        caption = f"🖼️ Imagen enviada manualmente:\n**{name}**\n⏰ {datetime.now().strftime('%H:%M:%S')} UTC"
+        await context.bot.send_photo(
+            chat_id=update.effective_chat.id,
+            photo=file,
+            caption=caption,
+            parse_mode="Markdown"
+        )
+        print("📤 Imagen enviada manualmente con /foto.")
+    else:
+        await update.message.reply_text("⚠️ No se pudo obtener una imagen en este momento.")
+
+# === Envío automático cada minuto ===
+async def send_random_image(context: ContextTypes.DEFAULT_TYPE):
+    file, name = get_random_image_file()
+    if file:
+        try:
+            caption = f"🌅 Imagen automática desde tu Google Drive\n**{name}**\n🕐 {datetime.now().strftime('%H:%M:%S')} UTC"
+            await context.bot.send_photo(
+                chat_id=OWNER_ID,
+                photo=file,
+                caption=caption,
+                parse_mode="Markdown"
+            )
+            print(f"📤 Imagen enviada automáticamente ({name}) a las {datetime.now()}")
+        except Exception as e:
+            print(f"❌ Error al enviar imagen automática: {e}")
+
+# === Función principal ===
+async def start_bot():
+    print("🚀 Iniciando bot...")
+
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    # Comandos
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stop", stop))
-    app.add_handler(CommandHandler("foto", send_random_photo))
+    app.add_handler(CommandHandler("ping", ping))
+    app.add_handler(CommandHandler("foto", foto))
 
-    # Programador de tareas automáticas
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(lambda: asyncio.run(send_random_image(app)), "interval", minutes=1)
+    # Tarea programada cada 1 minuto
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.add_job(send_random_image, "interval", minutes=1, args=[app])
     scheduler.start()
 
-    logging.info("🤖 Bot iniciado correctamente y escuchando comandos...")
-    await app.run_polling()
+    # Iniciar bot
+    await app.initialize()
+    await app.start()
+    print("🤖 Bot iniciado correctamente y escuchando comandos...")
 
-# --- MAIN ---
+    await asyncio.Event().wait()  # Mantiene el bot corriendo
+
+# === Ejecución principal ===
 if __name__ == "__main__":
-    keep_alive()  # Mantiene Flask activo
-    asyncio.get_event_loop().run_until_complete(run_bot())
+    keep_alive()  # mantiene el contenedor Railway activo
+
+    try:
+        asyncio.run(start_bot())
+    except KeyboardInterrupt:
+        print("🛑 Bot detenido manualmente.")
