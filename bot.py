@@ -1,47 +1,51 @@
 import os
+import threading
 import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from dotenv import load_dotenv
 from keep_alive import keep_alive
 
 # Cargar variables de entorno
-from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
-# --- Verificación básica ---
 if not BOT_TOKEN:
-    raise ValueError("❌ Falta la variable BOT_TOKEN en Railway")
+    raise ValueError("❌ Falta BOT_TOKEN en las variables de entorno.")
 
-# --- Comandos del bot ---
+# === COMANDOS ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 ¡Hola! Bot en Railway activo y funcionando 🚀")
+    await update.message.reply_text("👋 ¡Hola! El bot está activo en Railway 🚀")
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Pong! El bot está vivo 😎")
+    await update.message.reply_text("✅ Pong! Todo funciona correctamente 😎")
 
-# --- Arranque principal ---
-async def main():
+# === FUNCIÓN PRINCIPAL ===
+async def start_bot():
     print("🚀 Iniciando bot...")
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ping", ping))
 
-    # Ejecutar el bot (polling)
-    await app.run_polling(allowed_updates=Update.ALL_TYPES)
+    await app.initialize()
+    await app.start()
+    print("🤖 Bot iniciado correctamente y escuchando comandos...")
 
-# --- Mantener vivo el contenedor ---
-keep_alive()
+    # Mantiene el bot corriendo
+    await app.updater.start_polling()
+    await asyncio.Event().wait()  # Espera infinita sin cerrar loop
 
-# --- Iniciar bot ---
+# === ARRANQUE SEGURO PARA RAILWAY ===
+def run_bot():
+    asyncio.run(start_bot())
+
 if __name__ == "__main__":
-    try:
-        # Crear una nueva tarea sin cerrar el event loop
-        loop = asyncio.get_event_loop()
-        loop.create_task(main())
-        loop.run_forever()
-    except KeyboardInterrupt:
-        print("🛑 Bot detenido manualmente.")
+    # Inicia el servidor Flask (para mantener el contenedor vivo)
+    keep_alive()
+
+    # Inicia el bot en un hilo separado
+    bot_thread = threading.Thread(target=run_bot)
+    bot_thread.start()
