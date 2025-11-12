@@ -47,7 +47,7 @@ def get_random_image_file():
         files = results.get("files", [])
         if not files:
             print("⚠️ No se encontraron imágenes en Google Drive.")
-            return None
+            return None, None
         file = random.choice(files)
         print(f"🖼️ Imagen seleccionada: {file['name']} ({file['id']})")
 
@@ -55,10 +55,10 @@ def get_random_image_file():
         request = drive_service.files().get_media(fileId=file["id"])
         file_data = BytesIO(request.execute())
         file_data.name = file["name"]
-        return file_data
+        return file_data, file["name"]
     except Exception as e:
         print(f"⚠️ Error al obtener imagen: {e}")
-        return None
+        return None, None
 
 # === Comandos de Telegram ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -69,20 +69,32 @@ async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📸 Buscando una imagen aleatoria en tu Google Drive...")
-    file = get_random_image_file()
+    file, name = get_random_image_file()
     if file:
-        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=file)
+        caption = f"🖼️ Imagen enviada manualmente:\n**{name}**\n⏰ {datetime.now().strftime('%H:%M:%S')} UTC"
+        await context.bot.send_photo(
+            chat_id=update.effective_chat.id,
+            photo=file,
+            caption=caption,
+            parse_mode="Markdown"
+        )
         print("📤 Imagen enviada manualmente con /foto.")
     else:
         await update.message.reply_text("⚠️ No se pudo obtener una imagen en este momento.")
 
 # === Envío automático cada minuto ===
 async def send_random_image(context: ContextTypes.DEFAULT_TYPE):
-    file = get_random_image_file()
+    file, name = get_random_image_file()
     if file:
         try:
-            await context.bot.send_photo(chat_id=OWNER_ID, photo=file)
-            print(f"📤 Imagen enviada automáticamente a las {datetime.now()}")
+            caption = f"🌅 Imagen automática desde tu Google Drive\n**{name}**\n🕐 {datetime.now().strftime('%H:%M:%S')} UTC"
+            await context.bot.send_photo(
+                chat_id=OWNER_ID,
+                photo=file,
+                caption=caption,
+                parse_mode="Markdown"
+            )
+            print(f"📤 Imagen enviada automáticamente ({name}) a las {datetime.now()}")
         except Exception as e:
             print(f"❌ Error al enviar imagen automática: {e}")
 
