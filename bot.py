@@ -2,16 +2,13 @@ import os
 import random
 import asyncio
 from io import BytesIO
-from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 from dotenv import load_dotenv
 from keep_alive import keep_alive
-import pytz
 
 # === Cargar variables de entorno ===
 if os.path.exists("config.env"):
@@ -60,14 +57,15 @@ PHRASES = [
     "💎 Sé la energía que quieres atraer.",
     "🌻 La disciplina supera al talento cuando el talento no se esfuerza.",
     "🌸 Agradece incluso los pequeños avances.",
-    "✨ Cada amanecer es una nueva oportunidad para empezar."
+    "✨ Vive el presente, que es lo único que realmente tienes.",
+    "☁️ A veces perderse es la mejor forma de encontrarse.",
+    "💫 Si el plan no funciona, cambia el plan, no la meta.",
 ]
 
 # === Estado global ===
 auto_send_enabled = False
 scheduler = None
 send_interval = 1  # intervalo por defecto en minutos
-mode = "normal"  # "normal" o "diario"
 
 # === Función para obtener imagen aleatoria ===
 def get_random_image_file():
@@ -91,26 +89,11 @@ def get_random_image_file():
         print(f"⚠️ Error al obtener imagen: {e}")
         return None, None
 
-# === Envío automático ===
-async def send_random_image(context: ContextTypes.DEFAULT_TYPE):
-    global auto_send_enabled
-    if not auto_send_enabled:
-        return
-
-    file, _ = get_random_image_file()
-    if file:
-        try:
-            phrase = random.choice(PHRASES)
-            await context.bot.send_photo(chat_id=OWNER_ID, photo=file, caption=phrase)
-            print("📤 Imagen automática enviada")
-        except Exception as e:
-            print(f"❌ Error al enviar imagen automática: {e}")
-
-# === Comandos ===
+# === Comandos del bot ===
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global auto_send_enabled
     auto_send_enabled = True
-    await update.message.reply_text(f"✅ Autoenvío activado en modo *{mode}*. Te enviaré fotos automáticamente. 🌅", parse_mode="Markdown")
+    await update.message.reply_text(f"✅ Envío automático activado. Te enviaré fotos cada {send_interval} minuto(s) 🌅")
     print("▶️ Autoenvío activado por comando /start")
 
     # Enviar una imagen inicial
@@ -123,11 +106,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global auto_send_enabled
     auto_send_enabled = False
-    await update.message.reply_text("🛑 Autoenvío detenido. Usa /start para reanudar.")
+    await update.message.reply_text("🛑 Envío automático detenido. Usa /start para reanudar.")
     print("⏸️ Autoenvío detenido por comando /stop")
 
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("✅ Pong! El bot está activo y funcionando correctamente 😎")
+    await update.message.reply_text("✅ Pong! Todo funciona correctamente 😎")
 
 async def foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📸 Buscando una imagen aleatoria en tu Google Drive...")
@@ -135,17 +118,12 @@ async def foto(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if file:
         phrase = random.choice(PHRASES)
         await context.bot.send_photo(chat_id=update.effective_chat.id, photo=file, caption=phrase)
-        await update.message.reply_text("✅ Imagen enviada con éxito 🌄")
         print("📤 Imagen enviada manualmente")
     else:
         await update.message.reply_text("⚠️ No se pudo obtener una imagen en este momento.")
 
 async def settime(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global send_interval, scheduler, mode
-
-    if mode == "diario":
-        await update.message.reply_text("⚠️ Estás en modo diario. Cambia a modo normal con `/setmode normal` para usar /settime.", parse_mode="Markdown")
-        return
+    global send_interval, scheduler
 
     if not context.args:
         await update.message.reply_text("⏱️ Usa `/settime [5|15|30|1h]` para ajustar el intervalo de envío.", parse_mode="Markdown")
@@ -165,6 +143,7 @@ async def settime(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if new_interval:
         send_interval = new_interval
+        # Reiniciar tarea del scheduler
         for job in scheduler.get_jobs():
             job.remove()
         scheduler.add_job(send_random_image, "interval", minutes=send_interval, args=[context.application])
@@ -173,45 +152,33 @@ async def settime(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("⚠️ Valor no válido. Usa `/settime [5|15|30|1h]`.", parse_mode="Markdown")
 
-async def setmode(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global mode, scheduler
-
-    if not context.args:
-        await update.message.reply_text("📅 Usa `/setmode [normal|diario]` para cambiar el modo.", parse_mode="Markdown")
-        return
-
-    new_mode = context.args[0].lower()
-    if new_mode not in ["normal", "diario"]:
-        await update.message.reply_text("⚠️ Modo no válido. Usa `/setmode normal` o `/setmode diario`.", parse_mode="Markdown")
-        return
-
-    mode = new_mode
-    for job in scheduler.get_jobs():
-        job.remove()
-
-    if mode == "diario":
-        lima_tz = pytz.timezone("America/Lima")
-        scheduler.add_job(send_random_image, CronTrigger(hour=9, minute=0, timezone=lima_tz), args=[context.application])
-        await update.message.reply_text("🌞 Modo diario activado. Recibirás una imagen cada día a las *9:00 AM* 🇵🇪", parse_mode="Markdown")
-    else:
-        scheduler.add_job(send_random_image, "interval", minutes=send_interval, args=[context.application])
-        await update.message.reply_text(f"🔁 Modo normal activado. Imágenes cada {send_interval} minuto(s).", parse_mode="Markdown")
-
-    print(f"🔧 Modo cambiado a {mode}")
-
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "🤖 **Comandos disponibles:**\n\n"
         "/start → Activa el envío automático de imágenes 📸\n"
         "/stop → Detiene el envío automático 🛑\n"
-        "/foto → Envía una imagen aleatoria 🌅\n"
+        "/foto → Envía una imagen aleatoria al instante 🌅\n"
         "/settime [5|15|30|1h] → Cambia el intervalo de envío ⏱️\n"
-        "/setmode [normal|diario] → Cambia entre modo automático o diario 📆\n"
         "/ping → Verifica si el bot está activo ✅\n"
         "/help → Muestra esta lista de comandos ℹ️\n\n"
         "✨ Disfruta de tus fotos y frases inspiradoras ✨"
     )
     await update.message.reply_text(help_text, parse_mode="Markdown")
+
+# === Envío automático ===
+async def send_random_image(context: ContextTypes.DEFAULT_TYPE):
+    global auto_send_enabled
+    if not auto_send_enabled:
+        return
+
+    file, _ = get_random_image_file()
+    if file:
+        try:
+            phrase = random.choice(PHRASES)
+            await context.bot.send_photo(chat_id=OWNER_ID, photo=file, caption=phrase)
+            print("📤 Imagen automática enviada")
+        except Exception as e:
+            print(f"❌ Error al enviar imagen automática: {e}")
 
 # === Bucle principal ===
 async def start_bot():
@@ -226,10 +193,9 @@ async def start_bot():
     app.add_handler(CommandHandler("ping", ping))
     app.add_handler(CommandHandler("foto", foto))
     app.add_handler(CommandHandler("settime", settime))
-    app.add_handler(CommandHandler("setmode", setmode))
     app.add_handler(CommandHandler("help", help_command))
 
-    # Planificador
+    # Planificador de envío automático
     scheduler = AsyncIOScheduler(timezone="UTC")
     scheduler.add_job(send_random_image, "interval", minutes=send_interval, args=[app])
     scheduler.start()
@@ -238,11 +204,11 @@ async def start_bot():
     await app.initialize()
     await app.start()
     await app.updater.start_polling()
-    await asyncio.Event().wait()
+    await asyncio.Event().wait()  # Mantiene el bot activo
 
 # === Ejecución principal ===
 if __name__ == "__main__":
-    keep_alive()
+    keep_alive()  # Mantiene Railway activo
     try:
         asyncio.run(start_bot())
     except KeyboardInterrupt:
