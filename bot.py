@@ -1,8 +1,8 @@
 import os
-import asyncio
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from keep_alive import keep_alive
+import asyncio
 
 # === CARGA DE VARIABLES ===
 if os.path.exists("config.env"):
@@ -12,14 +12,13 @@ if os.path.exists("config.env"):
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 
-# Variables de Google
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_REFRESH_TOKEN = os.getenv("GOOGLE_REFRESH_TOKEN")
 
-# Validaciones
+# === VALIDACIONES ===
 if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN no encontrado. Verifica tus variables de entorno.")
+    raise ValueError("❌ BOT_TOKEN no encontrado.")
 if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET or not GOOGLE_REFRESH_TOKEN:
     raise ValueError("❌ Variables de Google no configuradas correctamente.")
 
@@ -30,22 +29,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("✅ Estoy vivo y funcionando correctamente en Railway.")
 
-# === FUNCIÓN PRINCIPAL ===
-async def main():
-    print("🚀 Iniciando bot...")
+# === CREAR APLICACIÓN ===
+app = ApplicationBuilder().token(BOT_TOKEN).build()
+app.add_handler(CommandHandler("start", start))
+app.add_handler(CommandHandler("ping", ping))
 
-    # Crear la aplicación
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+# === MANTENER BOT ACTIVO ===
+keep_alive()
 
-    # Agregar handlers de comandos
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("ping", ping))
-
-    # Mantener el bot activo
-    keep_alive()
-
-    # Ejecutar el bot en polling asincrónico
-    await app.run_polling(allowed_updates=Update.ALL_TYPES)
-
+# === EJECUTAR POLLING ===
 if __name__ == "__main__":
-    asyncio.run(main())
+    t
