@@ -1,0 +1,15 @@
+# Entornos virtuales
+venv/
+__pycache__/
+*.pyc
+
+# Configuración local
+config.env
+credentials.json
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Configuración Render
+.env
